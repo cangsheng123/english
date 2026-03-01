@@ -58,3 +58,30 @@ d000100o000100
 这版实现尽量贴合你的文档规则，但由于自然语言需要上下文/语义理解，
 “使役动词、名词子类、否定限制、从句边界、句子成分”等部分使用了启发式判断，
 你可以在 `encoder.py` 中继续增补词典与规则。
+
+## 新增：整段文本编码/解码
+
+```python
+from encoder import VisualGrammarEncoder
+
+enc = VisualGrammarEncoder()
+
+text = """Lesson 1 A private conversation
+Last week I went to the theatre.
+I did not enjoy it.
+"""
+
+# 1) 编码整段文本并保存到Word
+path = enc.save_encoded_text_to_word(text, "lesson_encoded.docx")
+print(path)
+
+# 2) 单词紧凑编码反解
+print(enc.decode_compact_token("d000100o000100"))  # do
+```
+
+如果你已有形如 `token/POS: c123456h123456...` 的多行结果，可用：
+
+```python
+decoded_text = enc.decode_compact_text(encoded_lines_text)
+print(decoded_text)
+```
