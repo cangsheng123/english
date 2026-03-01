@@ -85,3 +85,54 @@ print(enc.decode_compact_token("d000100o000100"))  # do
 decoded_text = enc.decode_compact_text(encoded_lines_text)
 print(decoded_text)
 ```
+
+## GitHub PR 显示 "This branch has conflicts" 怎么办
+
+当你在 GitHub 看到 `This branch has conflicts that must be resolved`（例如冲突文件是
+`README.md`、`encoder.py`）时，表示你的分支和目标分支都改了同一段内容，需要先手动合并。
+
+### 命令行解决（推荐）
+
+假设你的 PR 是 `work` 分支合并到 `main`：
+
+```bash
+# 1) 拉取最新远程信息
+git fetch origin
+
+# 2) 切到你的开发分支
+git checkout work
+
+# 3) 把目标分支合进来（也可用 rebase）
+git merge origin/main
+```
+
+出现冲突后：
+
+```bash
+# 4) 打开冲突文件，处理 <<<<<<< ======= >>>>>>> 标记
+#    处理完成后标记为已解决
+git add README.md encoder.py
+
+# 5) 完成合并提交
+git commit -m "Resolve merge conflicts with main"
+
+# 6) 推送到远程，PR 会自动更新
+git push origin work
+```
+
+### 用 GitHub 网页解决
+
+1. 在 PR 页面点击 **Resolve conflicts**。
+2. 逐个文件编辑并保留正确内容。
+3. 点击 **Mark as resolved**，再 **Commit merge**。
+4. 返回 PR 页面后即可继续合并。
+
+### 小提示
+
+- 冲突不是代码“坏了”，只是两个分支改了同一位置。
+- 建议先备份当前改动，再解决冲突。
+- 解决后务必本地运行：
+
+```bash
+python -m py_compile encoder.py
+```
