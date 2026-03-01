@@ -9,6 +9,7 @@
   - 前 3 位：词性大类 + 字体样式 + 下着重号。
   - 后 3 位：从句/非谓语边界 + 句子成分 + 被动/情态/虚拟等语法辅助。
 - 将重复逻辑拆成多个可复用方法，方便继续按你的规则扩展。
+- 新增 **NLTK 结果纠偏层**（rule-based re-tagging），对整段文本常见误标（如 can/MD、冠词 DT、to 不定式、纯数字 CD）做二次修正。
 
 ## 安装
 
@@ -136,3 +137,16 @@ git push origin work
 ```bash
 python -m py_compile encoder.py
 ```
+## 编码整本书（txt）
+
+```python
+from pathlib import Path
+from encoder import VisualGrammarEncoder
+
+encoder = VisualGrammarEncoder()
+book_text = Path("book.txt").read_text(encoding="utf-8")
+output = encoder.save_encoded_text_to_word(book_text, "book_encoded.docx")
+print(output)
+```
+
+实现上会先按段落，再按句子分割后编码，比“整段直接一次性标注”更稳定。

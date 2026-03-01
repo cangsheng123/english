@@ -23,10 +23,11 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 try:
     import nltk
-    from nltk import pos_tag, word_tokenize
+    from nltk import pos_tag, sent_tokenize, word_tokenize
 except Exception:  # 允许仅解码场景在无nltk环境下运行
     nltk = None
     pos_tag = None
+    sent_tokenize = None
     word_tokenize = None
 
 
@@ -106,7 +107,7 @@ class VisualGrammarEncoder:
         if word_tokenize is None or pos_tag is None:
             raise RuntimeError("NLTK 不可用：请先安装 nltk 后再进行编码。")
         tokens = word_tokenize(sentence)
-        tagged = pos_tag(tokens)
+        tagged = self._tag_tokens(tokens)
 
         # 先计算“后3位”的句法辅助上下文
         clause_marks = self._detect_clause_nonfinite_marks(tagged)
@@ -141,13 +142,16 @@ class VisualGrammarEncoder:
         ]
 
     def encode_text(self, text: str) -> List[TokenEncoding]:
-        """对整段文本进行编码（按行拆分后逐行编码并合并）。"""
+        """对整段文本进行编码（按句切分，逐句编码并合并）。"""
+        if sent_tokenize is None:
+            raise RuntimeError("NLTK 不可用：请先安装 nltk 后再进行编码。")
         all_tokens: List[TokenEncoding] = []
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
+        for para in text.splitlines():
+            para = para.strip()
+            if not para:
                 continue
-            all_tokens.extend(self.encode_sentence(line))
+            for sentence in sent_tokenize(para):
+                all_tokens.extend(self.encode_sentence(sentence))
         return all_tokens
 
     def decode_compact_token(self, compact: str) -> str:
@@ -226,6 +230,46 @@ class VisualGrammarEncoder:
                 nltk.data.find(resource_path)
             except LookupError:
                 nltk.download(package, quiet=True)
+
+    def _tag_tokens(self, tokens: Sequence[str]) -> List[Tuple[str, str]]:
+        """先用 NLTK 标注，再做可解释的规则纠偏，提高整段文本稳定性。"""
+        tagged = list(pos_tag(tokens))
+        return self._retag_with_rules(tagged)
+
+    def _retag_with_rules(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """对 NLTK 结果做轻量后处理，缓解常见误标。"""
+        force_tags = {
+            "a": "DT", "an": "DT", "the": "DT",
+            "this": "DT", "that": "DT", "these": "DT", "those": "DT",
+            "my": "PRP$", "your": "PRP$", "our": "PRP$", "their": "PRP$", "its": "PRP$",
+            "with": "IN", "for": "IN", "from": "IN", "of": "IN", "at": "IN", "by": "IN", "about": "IN",
+            "and": "CC", "or": "CC", "but": "CC", "nor": "CC",
+            "can": "MD", "could": "MD", "may": "MD", "might": "MD", "must": "MD",
+            "shall": "MD", "should": "MD", "will": "MD", "would": "MD",
+            "not": "RB", "never": "RB",
+        }
+
+        fixed = list(tagged)
+        for i, (tok, pos) in enumerate(fixed):
+            low = tok.lower()
+            if low in force_tags:
+                fixed[i] = (tok, force_tags[low])
+                continue
+
+            # to + VB 统一看作不定式标记
+            if low == "to" and i + 1 < len(fixed) and fixed[i + 1][1].startswith("VB"):
+                fixed[i] = (tok, "TO")
+                continue
+
+            # 纯数字统一 CD
+            if tok.isdigit():
+                fixed[i] = (tok, "CD")
+
+            # 句首称呼语，如 "Tom," 倾向 NNP
+            if i == 0 and i + 1 < len(fixed) and fixed[i + 1][0] == "," and pos in {"NN", "NNS"}:
+                fixed[i] = (tok, "NNP")
+
+        return fixed
 
     def _write_simple_docx(self, lines: Sequence[str], output_docx: str) -> str:
         """零第三方依赖写入最小可打开的 .docx 文件。"""
