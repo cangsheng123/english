@@ -17,9 +17,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Sequence, Tuple
 import re
+from pathlib import Path
+from xml.sax.saxutils import escape
+from zipfile import ZipFile, ZIP_DEFLATED
 
-import nltk
-from nltk import pos_tag, word_tokenize
+try:
+    import nltk
+    from nltk import pos_tag, word_tokenize
+except Exception:  # 允许仅解码场景在无nltk环境下运行
+    nltk = None
+    pos_tag = None
+    word_tokenize = None
 
 
 # -----------------------------
@@ -49,7 +57,9 @@ class VisualGrammarEncoder:
     """将句子编码为每字母 6 位数字。"""
 
     def __init__(self) -> None:
-        self._ensure_nltk_resources()
+        # 允许在无 nltk 环境下仅使用解码或docx工具方法
+        if nltk is not None:
+            self._ensure_nltk_resources()
 
         # 前三位中的第一位（词性大类）
         self.first_digit_map: Dict[str, str] = {
@@ -93,6 +103,8 @@ class VisualGrammarEncoder:
     # -----------------------------
 
     def encode_sentence(self, sentence: str) -> List[TokenEncoding]:
+        if word_tokenize is None or pos_tag is None:
+            raise RuntimeError("NLTK 不可用：请先安装 nltk 后再进行编码。")
         tokens = word_tokenize(sentence)
         tagged = pos_tag(tokens)
 
@@ -128,11 +140,83 @@ class VisualGrammarEncoder:
             for item in encoded
         ]
 
+    def encode_text(self, text: str) -> List[TokenEncoding]:
+        """对整段文本进行编码（按行拆分后逐行编码并合并）。"""
+        all_tokens: List[TokenEncoding] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            all_tokens.extend(self.encode_sentence(line))
+        return all_tokens
+
+    def decode_compact_token(self, compact: str) -> str:
+        """把形如 d000100o000100 的紧凑编码还原为原单词。"""
+        i = 0
+        chars: List[str] = []
+        while i < len(compact):
+            ch = compact[i]
+            # 数字 token 在编码时可能原样返回
+            if i + 7 > len(compact) or not compact[i + 1:i + 7].isdigit():
+                chars.append(ch)
+                i += 1
+            else:
+                chars.append(ch)
+                i += 7
+        return "".join(chars)
+
+    def decode_compact_text(self, text: str) -> str:
+        """将多行 token/POS: compact 输出反解回可读文本。"""
+        lines: List[str] = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line:
+                lines.append("")
+                continue
+            if ":" not in line:
+                lines.append(line)
+                continue
+            _, right = line.split(":", 1)
+            decoded_parts: List[str] = []
+            for piece in right.strip().split():
+                decoded_parts.append(self.decode_compact_token(piece))
+            lines.append(" ".join(decoded_parts))
+        return "\n".join(lines)
+
+    def save_encoded_text_to_word(self, text: str, output_docx: str = "encoded_text_output.docx") -> str:
+        """将整段文本编码结果保存到 Word。"""
+        encoded = self.encode_text(text)
+        lines = ["Encoded text tokens:"]
+        for item in encoded:
+            if item.letters and item.letters[0].code == "":
+                lines.append(f"{item.token}/{item.pos}: {item.token}")
+            else:
+                lines.append(f"{item.token}/{item.pos}: {item.compact}")
+        return self._write_simple_docx(lines, output_docx)
+
+    def save_sentence_to_word(self, sentence: str, output_docx: str = "encoded_output.docx") -> str:
+        """将句子的编码结果保存到 Word 文档(.docx)。
+
+        文档内容格式：
+        - 第一行：Original sentence
+        - 后续每行：token/POS: c123456h123456...
+        """
+        encoded = self.encode_sentence(sentence)
+        lines = [f"Original sentence: {sentence}", "", "Encoded tokens:"]
+        for item in encoded:
+            if item.letters and item.letters[0].code == "":
+                lines.append(f"{item.token}/{item.pos}: {item.token}")
+            else:
+                lines.append(f"{item.token}/{item.pos}: {item.compact}")
+        return self._write_simple_docx(lines, output_docx)
+
     # -----------------------------
     # NLTK 准备
     # -----------------------------
 
     def _ensure_nltk_resources(self) -> None:
+        if nltk is None:
+            raise RuntimeError("NLTK 未安装，编码功能不可用；但解码和docx写入功能仍可单独使用。")
         resources = [
             ("tokenizers/punkt", "punkt"),
             ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
@@ -142,6 +226,50 @@ class VisualGrammarEncoder:
                 nltk.data.find(resource_path)
             except LookupError:
                 nltk.download(package, quiet=True)
+
+    def _write_simple_docx(self, lines: Sequence[str], output_docx: str) -> str:
+        """零第三方依赖写入最小可打开的 .docx 文件。"""
+        output = Path(output_docx)
+        if output.suffix.lower() != ".docx":
+            output = output.with_suffix(".docx")
+
+        content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"""
+
+        rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"""
+
+        body = []
+        for line in lines:
+            text = escape(line)
+            paragraph = (
+                "<w:p><w:r><w:t xml:space=\"preserve\">"
+                f"{text}"
+                "</w:t></w:r></w:p>"
+            )
+            body.append(paragraph)
+
+        document = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    {''.join(body)}
+    <w:sectPr/>
+  </w:body>
+</w:document>"""
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with ZipFile(output, "w", compression=ZIP_DEFLATED) as zf:
+            zf.writestr("[Content_Types].xml", content_types)
+            zf.writestr("_rels/.rels", rels)
+            zf.writestr("word/document.xml", document)
+
+        return str(output.resolve())
 
     # -----------------------------
     # 编码核心
@@ -573,16 +701,30 @@ class VisualGrammarEncoder:
 
 
 def demo() -> None:
-    sentence = "Tom would have been doing the work in the room when I arrived."
+    sample_text = """Lesson 1 A private conversation
+Last week I went to the theatre.
+I did not enjoy it.
+' What a day ! ' I thought.
+"""
     encoder = VisualGrammarEncoder()
-    encoded = encoder.encode_sentence(sentence)
 
-    for item in encoded:
+    if nltk is None:
+        print("当前环境未安装 NLTK：仅演示解码接口与 docx 写入结构。")
+        compact_demo = "d000100o000100"
+        print("decode_compact_token:", encoder.decode_compact_token(compact_demo))
+        saved = encoder._write_simple_docx(["NLTK unavailable demo"], "encoded_output.docx")
+        print(f"Word 文件已保存: {saved}")
+        return
+
+    encoded = encoder.encode_text(sample_text)
+    for item in encoded[:30]:
         if item.letters and item.letters[0].code == "":
-            # 纯数字
             print(f"{item.token}/{item.pos}: {item.token}")
         else:
             print(f"{item.token}/{item.pos}: {item.compact}")
+
+    saved = encoder.save_encoded_text_to_word(sample_text, "encoded_output.docx")
+    print(f"\nWord 文件已保存: {saved}")
 
 
 if __name__ == "__main__":
