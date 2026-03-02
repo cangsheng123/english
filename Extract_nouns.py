@@ -227,6 +227,101 @@ class VisualGrammarEncoder:
         """Backward-compatible alias for get_noun_phrases."""
         return self.get_noun_phrases(text)
 
+    def get_labeled_noun_results(self, text: str) -> Dict[str, List[Dict[str, str]]]:
+        """返回适合展示/导出的两类名词分析结果。"""
+        raw_result = self.get_noun_phrases(text)
+
+        labeled_multiword: List[Dict[str, str]] = []
+        for chunk in raw_result["multiword_chunks"]:
+            labeled_multiword.append(
+                {
+                    "标注类型": "2词及以上名词块模式",
+                    "句子序号": f"S{chunk['sentence_index'] + 1}",
+                    "名词块文本": str(chunk["text"]),
+                    "词性组合模式": str(chunk["pos_pattern"]),
+                }
+            )
+
+        labeled_single: List[Dict[str, str]] = []
+        for single in raw_result["single_nouns_with_context"]:
+            labeled_single.append(
+                {
+                    "标注类型": "单个名词+前后词性搭配组合",
+                    "句子序号": f"S{single['sentence_index'] + 1}",
+                    "单个名词": str(single["token"]),
+                    "前后词性搭配模式": str(single["context_pattern"]),
+                }
+            )
+
+        return {
+            "labeled_multiword": labeled_multiword,
+            "labeled_single": labeled_single,
+        }
+
+    def export_noun_results_to_excel(
+        self,
+        text: str,
+        output_excel: str = "名词块分析结果.xlsx",
+        multi_label: str = "2词及以上名词块模式",
+        single_label: str = "单个名词+前后词性搭配组合",
+    ) -> str:
+        """导出名词块分析到 Excel（两个工作表）。"""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+        except ImportError as exc:
+            raise RuntimeError("请先安装 openpyxl：pip install openpyxl") from exc
+
+        labeled = self.get_labeled_noun_results(text)
+
+        wb = Workbook()
+
+        ws_multi = wb.active
+        ws_multi.title = multi_label[:31] or "Multiword"
+        headers_multi = ["句子序号", "名词块文本", "词性组合模式"]
+        for col, header in enumerate(headers_multi, 1):
+            cell = ws_multi.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+
+        for row, item in enumerate(labeled["labeled_multiword"], 2):
+            ws_multi.cell(row=row, column=1, value=item["句子序号"])
+            ws_multi.cell(row=row, column=2, value=item["名词块文本"])
+            ws_multi.cell(row=row, column=3, value=item["词性组合模式"])
+
+        if not labeled["labeled_multiword"]:
+            ws_multi.cell(row=2, column=1, value="(none)")
+
+        ws_multi.column_dimensions["A"].width = 12
+        ws_multi.column_dimensions["B"].width = 36
+        ws_multi.column_dimensions["C"].width = 26
+
+        ws_single = wb.create_sheet(title=single_label[:31] or "Single")
+        headers_single = ["句子序号", "单个名词", "前后词性搭配模式"]
+        for col, header in enumerate(headers_single, 1):
+            cell = ws_single.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+
+        for row, item in enumerate(labeled["labeled_single"], 2):
+            ws_single.cell(row=row, column=1, value=item["句子序号"])
+            ws_single.cell(row=row, column=2, value=item["单个名词"])
+            ws_single.cell(row=row, column=3, value=item["前后词性搭配模式"])
+
+        if not labeled["labeled_single"]:
+            ws_single.cell(row=2, column=1, value="(none)")
+
+        ws_single.column_dimensions["A"].width = 12
+        ws_single.column_dimensions["B"].width = 18
+        ws_single.column_dimensions["C"].width = 32
+
+        output_path = Path(output_excel)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(output_path)
+        return str(output_path.resolve())
+
 
     def format_noun_phrase_report(self, text: str) -> List[str]:
         """格式化名词识别结果，便于直接打印查看。"""
@@ -356,7 +451,9 @@ class VisualGrammarEncoder:
             raise RuntimeError("NLTK 未安装，编码功能不可用；但解码和docx写入功能仍可单独使用。")
         resources = [
             ("tokenizers/punkt", "punkt"),
+            ("tokenizers/punkt_tab", "punkt_tab"),
             ("taggers/averaged_perceptron_tagger", "averaged_perceptron_tagger"),
+            ("taggers/averaged_perceptron_tagger_eng", "averaged_perceptron_tagger_eng"),
         ]
         for resource_path, package in resources:
             try:
