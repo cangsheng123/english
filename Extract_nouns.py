@@ -99,6 +99,31 @@ class VisualGrammarEncoder:
             "unless", "until", "once",
         }
 
+        # 名词语块规则（[NN] 表示 NN/NNP/NNS/NNPS）
+        self.noun_phrase_pattern_specs: List[str] = [
+            "DT_JJ_NNP_NNP_POS_[NN]", "NNP_NNP_POS_[NN]", "PRP$_NN_POS_[NN]", "CD_NNS_POS_[NN]",
+            "DT_NNP_NNP_[NN]", "DT_NNP_POS_[NN]", "DT_NNS_POS_[NN]", "JJ_NNP_POS_[NN]",
+            "NN_NNS_POS_[NN]", "NNP_NNP_POS_JJ_[NN]", "DT_JJ_NNP_[NN]", "DT_NN_POS_[NN]",
+            "DT_RBS_JJ_[NN]", "DT_RBS_NN_[NN]", "DT_RBS_[NN]_NN", "JJ_NNP_NN_[NN]",
+            "NN_NN_POS_[NN]", "[NN]_NNS", "DT_JJ_JJ_[NN]", "DT_JJ_NN_[NN]", "DT_RB_JJ_[NN]",
+            "RB_JJ_NN_[NN]", "NNP_POS_[NN]", "PRP$_DT_[NN]", "PRP$_JJ_[NN]", "PRP$_NN_[NN]",
+            "DT_JJR_[NN]", "DT_JJS_[NN]", "DT_NNP_[NN]", "NN_POS_[NN]", "NNP_JJ_[NN]",
+            "PDT_DT_[NN]", "CD_JJ_[NN]", "DT_DT_[NN]", "DT_JJ_[NN]", "DT_NN_[NN]", "NN_DT_[NN]",
+            "RB_CD_[NN]", "RB_JJ_[NN]", "PRP$_[NN]", "JJR_[NN]", "NNP_[NN]", "NNS_[NN]",
+            "POS_[NN]", "CD_[NN]", "DT_[NN]", "JJ_[NN]", "NN_[NN]", "[NN]", "DT_NNP_POS_[NN]_NN",
+            "DT_JJ_CD_NNS", "DT_JJ_NNP_[NN]_NN", "DT_JJ_NNP_NN_[NN]", "DT_NN_POS_[NN]_NNS",
+            "DT_JJ_NNP_NN_[NN]", "DT_JJ_NNP_[NN]_NN", "JJ_NNP_[NN]_NN", "DT_NN_NN_POS_[NN]",
+            "DT_RB_JJ_[NN]_NN", "JJ_NNS", "CD_NNS", "DT_RB_JJ_NN_[NN]", "DT_RB_JJ_[NN]_NN",
+            "DT_NNP_POS_[NN]", "NNP_NNP_POS_[NN]", "NNP_POS_[NN]_NNS", "DT_NNP_POS_[NN]_NN",
+            "NNP_POS_[NN]_NN", "JJ_NNP_POS_[NN]", "DT_JJ_NNP_NNP_POS_[NN]", "PRP$_JJ_[NN]_NNP",
+            "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN",
+        ]
+        self._noun_tag_set = {"NN", "NNP", "NNS", "NNPS"}
+        self._compiled_noun_phrase_patterns = [
+            (spec, self._compile_noun_pattern(spec)) for spec in self.noun_phrase_pattern_specs
+        ]
+        self._compiled_noun_phrase_patterns.sort(key=lambda item: len(item[1]), reverse=True)
+
     # -----------------------------
     # 公共方法
     # -----------------------------
@@ -127,6 +152,80 @@ class VisualGrammarEncoder:
             )
             results.append(TokenEncoding(token=token, pos=pos, letters=letters))
         return results
+
+    def get_noun_phrases(self, text: str) -> Dict[str, List[Dict[str, object]]]:
+        """Get noun phrases, chunk POS patterns and single-noun context combinations."""
+        if sent_tokenize is None or word_tokenize is None or pos_tag is None:
+            raise RuntimeError("NLTK is unavailable: install nltk before noun phrase extraction.")
+
+        multiword_chunks: List[Dict[str, object]] = []
+        single_nouns_with_context: List[Dict[str, object]] = []
+
+        for sent_index, sentence in enumerate(sent_tokenize(text)):
+            tagged = self._tag_tokens(word_tokenize(sentence))
+            occupied = [False] * len(tagged)
+            noun_indexes = [idx for idx, (_, pos) in enumerate(tagged) if pos in self._noun_tag_set]
+
+            i = 0
+            while i < len(tagged):
+                match = self._match_noun_pattern_at(tagged, i)
+                if not match:
+                    i += 1
+                    continue
+
+                pattern, span = match
+                end = i + span
+
+                # 必须包含名词，且仅统计 2 词及以上名词块
+                has_noun = any(j in noun_indexes for j in range(i, end))
+                if span >= 2 and has_noun:
+                    for j in range(i, end):
+                        occupied[j] = True
+                    tags = [pos for _, pos in tagged[i:end]]
+                    multiword_chunks.append(
+                        {
+                            "sentence_index": sent_index,
+                            "start": i,
+                            "end": end - 1,
+                            "text": " ".join(tok for tok, _ in tagged[i:end]),
+                            "tokens": [tok for tok, _ in tagged[i:end]],
+                            "tags": tags,
+                            "pattern": pattern,
+                            "pos_pattern": "_".join(tags),
+                        }
+                    )
+                    i = end
+                else:
+                    i += 1
+
+            for idx in noun_indexes:
+                tok, pos = tagged[idx]
+                if occupied[idx]:
+                    continue
+                prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
+                next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
+                single_nouns_with_context.append(
+                    {
+                        "sentence_index": sent_index,
+                        "index": idx,
+                        "token": tok,
+                        "noun_tag": pos,
+                        "context_pattern": f"{prev_pos}_{pos}_{next_pos}",
+                        "prev_tag": prev_pos,
+                        "next_tag": next_pos,
+                    }
+                )
+
+        return {
+            "multiword_chunks": multiword_chunks,
+            "single_nouns_with_context": single_nouns_with_context,
+            "multiword_pos_patterns": [chunk["pos_pattern"] for chunk in multiword_chunks],
+            "single_noun_context_patterns": [item["context_pattern"] for item in single_nouns_with_context],
+        }
+
+    def extract_noun_phrase_chunks(self, text: str) -> Dict[str, List[Dict[str, object]]]:
+        """Backward-compatible alias for get_noun_phrases."""
+        return self.get_noun_phrases(text)
 
     def encode_sentence_as_dict(self, sentence: str) -> List[Dict[str, object]]:
         """便于 JSON 序列化。"""
@@ -281,6 +380,33 @@ class VisualGrammarEncoder:
                 fixed[i] = (tok, "NNP")
 
         return fixed
+
+    def _compile_noun_pattern(self, pattern: str) -> List[set[str]]:
+        compiled: List[set[str]] = []
+        for part in pattern.split("_"):
+            if part == "[NN]":
+                compiled.append(set(self._noun_tag_set))
+            else:
+                compiled.append({part})
+        return compiled
+
+    def _match_noun_pattern_at(
+        self,
+        tagged: Sequence[Tuple[str, str]],
+        start: int,
+    ) -> Tuple[str, int] | None:
+        for spec, compiled in self._compiled_noun_phrase_patterns:
+            span = len(compiled)
+            if start + span > len(tagged):
+                continue
+            ok = True
+            for i, options in enumerate(compiled):
+                if tagged[start + i][1] not in options:
+                    ok = False
+                    break
+            if ok:
+                return spec, span
+        return None
 
     def _write_simple_docx(self, lines: Sequence[str], output_docx: str) -> str:
         """零第三方依赖写入最小可打开的 .docx 文件。"""

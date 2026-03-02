@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from encoder import VisualGrammarEncoder
+from Extract_nouns import VisualGrammarEncoder
 
 
 class EncoderApp:

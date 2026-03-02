@@ -22,7 +22,7 @@ pip install nltk
 ## 运行
 
 ```bash
-python encoder.py
+python Extract_nouns.py
 ```
 
 运行后会在当前目录生成 `encoded_output.docx`，内容包含原句与每个 token 的编码结果。
@@ -44,7 +44,7 @@ python app.py
 ## 作为库调用
 
 ```python
-from encoder import VisualGrammarEncoder
+from Extract_nouns import VisualGrammarEncoder
 
 encoder = VisualGrammarEncoder()
 result = encoder.encode_sentence("He can finish the work quickly.")
@@ -72,12 +72,12 @@ d000100o000100
 
 这版实现尽量贴合你的文档规则，但由于自然语言需要上下文/语义理解，
 “使役动词、名词子类、否定限制、从句边界、句子成分”等部分使用了启发式判断，
-你可以在 `encoder.py` 中继续增补词典与规则。
+你可以在 `Extract_nouns.py` 中继续增补词典与规则。
 
 ## 新增：整段文本编码/解码
 
 ```python
-from encoder import VisualGrammarEncoder
+from Extract_nouns import VisualGrammarEncoder
 
 enc = VisualGrammarEncoder()
 
@@ -101,10 +101,39 @@ decoded_text = enc.decode_compact_text(encoded_lines_text)
 print(decoded_text)
 ```
 
+
+## Noun Phrase Extraction (2+ tokens)
+
+```python
+from Extract_nouns import VisualGrammarEncoder
+
+enc = VisualGrammarEncoder()
+text = "The old city park is open. John's book cover is red."
+result = enc.get_noun_phrases(text)
+
+# 1) 两个或以上单词构成的名词语块（以及对应词性模式）
+for chunk in result["multiword_chunks"]:
+    print(chunk["text"], chunk["pos_pattern"])
+
+# 2) 不构成名词语块的单个名词（输出前后词性搭配）
+for item in result["single_nouns_with_context"]:
+    print(item["token"], item["context_pattern"])
+
+# 3) 直接取模式列表
+print(result["multiword_pos_patterns"])
+print(result["single_noun_context_patterns"])
+```
+
+返回结构包含：
+- `multiword_chunks`：匹配到的 2+ 词名词语块（含原文、tag 序列、命中的模式、`pos_pattern`）。
+- `single_nouns_with_context`：未被 2+ 语块覆盖的单个名词，附 `前词性_名词词性_后词性`。
+- `multiword_pos_patterns`：2+ 词名词块模式列表（如 `DT_JJ_NN`）。
+- `single_noun_context_patterns`：单个名词与前后词性的搭配列表（如 `DT_NN_VBZ`）。
+
 ## GitHub PR 显示 "This branch has conflicts" 怎么办
 
 当你在 GitHub 看到 `This branch has conflicts that must be resolved`（例如冲突文件是
-`README.md`、`encoder.py`）时，表示你的分支和目标分支都改了同一段内容，需要先手动合并。
+`README.md`、`Extract_nouns.py`）时，表示你的分支和目标分支都改了同一段内容，需要先手动合并。
 
 ### 命令行解决（推荐）
 
@@ -126,7 +155,7 @@ git merge origin/main
 ```bash
 # 4) 打开冲突文件，处理 <<<<<<< ======= >>>>>>> 标记
 #    处理完成后标记为已解决
-git add README.md encoder.py
+git add README.md Extract_nouns.py
 
 # 5) 完成合并提交
 git commit -m "Resolve merge conflicts with main"
@@ -149,13 +178,13 @@ git push origin work
 - 解决后务必本地运行：
 
 ```bash
-python -m py_compile encoder.py
+python -m py_compile Extract_nouns.py
 ```
 ## 编码整本书（txt）
 
 ```python
 from pathlib import Path
-from encoder import VisualGrammarEncoder
+from Extract_nouns import VisualGrammarEncoder
 
 encoder = VisualGrammarEncoder()
 book_text = Path("book.txt").read_text(encoding="utf-8")
