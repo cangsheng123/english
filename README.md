@@ -124,6 +124,16 @@ print(result["multiword_pos_patterns"])
 print(result["single_noun_context_patterns"])
 ```
 
+
+如果你希望直接打印查看（不自己写循环），可以用：
+
+```python
+from Extract_nouns import VisualGrammarEncoder
+
+enc = VisualGrammarEncoder()
+print("\n".join(enc.format_noun_phrase_report("The old city park is open.")))
+```
+
 返回结构包含：
 - `multiword_chunks`：匹配到的 2+ 词名词语块（含原文、tag 序列、命中的模式、`pos_pattern`）。
 - `single_nouns_with_context`：未被 2+ 语块覆盖的单个名词，附 `前词性_名词词性_后词性`。

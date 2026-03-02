@@ -227,6 +227,29 @@ class VisualGrammarEncoder:
         """Backward-compatible alias for get_noun_phrases."""
         return self.get_noun_phrases(text)
 
+
+    def format_noun_phrase_report(self, text: str) -> List[str]:
+        """格式化名词识别结果，便于直接打印查看。"""
+        result = self.get_noun_phrases(text)
+        lines: List[str] = ["=== Noun Phrase Report ===", "[2+词名词块模式]"]
+
+        if result["multiword_chunks"]:
+            for chunk in result["multiword_chunks"]:
+                lines.append(f"S{chunk['sentence_index']} {chunk['text']} -> {chunk['pos_pattern']}")
+        else:
+            lines.append("(none)")
+
+        lines.append("[单个名词前后词性搭配]")
+        if result["single_nouns_with_context"]:
+            for item in result["single_nouns_with_context"]:
+                lines.append(
+                    f"S{item['sentence_index']} {item['token']} -> {item['context_pattern']}"
+                )
+        else:
+            lines.append("(none)")
+
+        return lines
+
     def encode_sentence_as_dict(self, sentence: str) -> List[Dict[str, object]]:
         """便于 JSON 序列化。"""
         encoded = self.encode_sentence(sentence)
@@ -903,6 +926,8 @@ I did not enjoy it.
             print(f"{item.token}/{item.pos}: {item.token}")
         else:
             print(f"{item.token}/{item.pos}: {item.compact}")
+
+    print("\n" + "\n".join(encoder.format_noun_phrase_report(sample_text)))
 
     saved = encoder.save_encoded_text_to_word(sample_text, "encoded_output.docx")
     print(f"\nWord 文件已保存: {saved}")
