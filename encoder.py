@@ -98,6 +98,21 @@ class VisualGrammarEncoder:
             "if", "whether", "because", "although", "though", "while", "since", "before", "after",
             "unless", "until", "once",
         }
+        self.common_base_verbs = {
+            "be", "do", "have", "go", "come", "get", "make", "take", "put", "set", "let", "help",
+            "enjoy", "like", "love", "want", "need", "know", "think", "say", "tell", "ask", "find",
+            "work", "play", "study", "sit", "stand", "talk", "walk", "read", "write", "watch", "use",
+            "look", "feel", "seem", "become", "show", "call", "keep", "start", "begin", "leave",
+            "open", "close", "move", "live", "try", "stop", "give", "bring", "turn", "run", "wait",
+        }
+        self.common_adjectives = {
+            "good", "bad", "young", "old", "new", "big", "small", "private", "interesting", "happy",
+            "sad", "easy", "difficult", "important", "different", "same", "last", "next", "first",
+        }
+        self.preposition_words = {
+            "in", "on", "at", "by", "for", "with", "without", "from", "to", "of", "about", "under",
+            "over", "before", "after", "behind", "between", "into", "through", "during", "against",
+        }
 
     # -----------------------------
     # 公共方法
@@ -248,7 +263,14 @@ class VisualGrammarEncoder:
         return self._retag_with_rules(tagged)
 
     def _retag_with_rules(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
-        """对 NLTK 结果做轻量后处理，缓解常见误标。"""
+        """对 NLTK 结果做多轮后处理，缓解复杂句常见误标。"""
+        fixed = self._apply_force_tags(tagged)
+        fixed = self._apply_local_context_rules(fixed)
+        fixed = self._apply_pattern_rules(fixed)
+        return fixed
+
+    def _apply_force_tags(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """第一轮：高置信词典强制纠偏。"""
         force_tags = {
             "a": "DT", "an": "DT", "the": "DT",
             "this": "DT", "that": "DT", "these": "DT", "those": "DT",
@@ -266,19 +288,103 @@ class VisualGrammarEncoder:
             if low in force_tags:
                 fixed[i] = (tok, force_tags[low])
                 continue
-
-            # to + VB 统一看作不定式标记
-            if low == "to" and i + 1 < len(fixed) and fixed[i + 1][1].startswith("VB"):
-                fixed[i] = (tok, "TO")
-                continue
-
-            # 纯数字统一 CD
             if tok.isdigit():
                 fixed[i] = (tok, "CD")
+        return fixed
 
-            # 句首称呼语，如 "Tom," 倾向 NNP
+    def _apply_local_context_rules(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """第二轮：局部窗口规则，修正常见歧义词。"""
+        fixed = list(tagged)
+        for i, (tok, pos) in enumerate(fixed):
+            low = tok.lower()
+            prev_pos = fixed[i - 1][1] if i > 0 else ""
+            next_pos = fixed[i + 1][1] if i + 1 < len(fixed) else ""
+            next_word = fixed[i + 1][0].lower() if i + 1 < len(fixed) else ""
+
+            # to + 动词原形 => TO（不定式标记）
+            if low == "to":
+                if next_pos.startswith("VB") or next_word in self.common_base_verbs:
+                    fixed[i] = (tok, "TO")
+                else:
+                    fixed[i] = (tok, "IN")
+                continue
+
+            # 句首称呼语，如 Tom,
             if i == 0 and i + 1 < len(fixed) and fixed[i + 1][0] == "," and pos in {"NN", "NNS"}:
                 fixed[i] = (tok, "NNP")
+                continue
+
+            # 冠词后优先名词/形容词
+            if prev_pos in {"DT", "PRP$"} and pos in {"VB", "VBP", "VBD"}:
+                if low in self.common_adjectives:
+                    fixed[i] = (tok, "JJ")
+                elif low.endswith(("ing", "ed")):
+                    fixed[i] = (tok, "JJ")
+                else:
+                    fixed[i] = (tok, "NN")
+                continue
+
+            # 情态后优先原形动词
+            if prev_pos == "MD" and pos in {"NN", "JJ", "VBP", "VBZ"}:
+                fixed[i] = (tok, "VB")
+                continue
+
+            # 不定式 to 后优先动词原形
+            if prev_pos == "TO" and pos in {"NN", "JJ", "VBP", "VBZ"}:
+                if low in self.common_base_verbs or low.endswith(("e", "n", "k", "t", "p")):
+                    fixed[i] = (tok, "VB")
+                continue
+
+            # 系动词后的分词常做表语形容词
+            if prev_pos in {"VBZ", "VBP", "VBD"} and i > 0 and fixed[i - 1][0].lower() in self.copulas:
+                if pos in {"VBG", "VBN"}:
+                    fixed[i] = (tok, "JJ")
+                    continue
+
+            # 介词后如被标成动词，多数为名词/动名词
+            if prev_pos == "IN" and pos in {"VB", "VBP", "VBZ"}:
+                fixed[i] = (tok, "NN")
+                continue
+
+            # 并列词性对齐：JJ and JJ / NN and NN
+            if low == "and" and 0 < i < len(fixed) - 1:
+                left_pos = fixed[i - 1][1]
+                right_pos = fixed[i + 1][1]
+                if left_pos.startswith("JJ") and right_pos in {"NN", "VB"}:
+                    fixed[i + 1] = (fixed[i + 1][0], "JJ")
+                if left_pos.startswith("NN") and right_pos.startswith("VB"):
+                    fixed[i + 1] = (fixed[i + 1][0], "NN")
+
+        return fixed
+
+    def _apply_pattern_rules(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """第三轮：词形与短语模板规则。"""
+        fixed = list(tagged)
+        for i, (tok, pos) in enumerate(fixed):
+            low = tok.lower()
+
+            # 常见介词词表兜底
+            if low in self.preposition_words and pos not in {"IN", "TO"}:
+                fixed[i] = (tok, "IN" if low != "to" else "TO")
+                continue
+
+            # -ly 高概率副词
+            if low.endswith("ly") and pos in {"JJ", "NN", "VB"}:
+                fixed[i] = (tok, "RB")
+                continue
+
+            # 规则化过去式/过去分词词尾
+            if low.endswith("ed") and pos in {"NN", "JJ"}:
+                fixed[i] = (tok, "VBD")
+                continue
+
+            # 规则化进行式词尾
+            if low.endswith("ing") and pos in {"NN", "JJ"}:
+                prev_pos = fixed[i - 1][1] if i > 0 else ""
+                if prev_pos in {"IN", "DT", "PRP$", "POS"}:
+                    fixed[i] = (tok, "VBG")
+                else:
+                    fixed[i] = (tok, "VBG")
 
         return fixed
 
