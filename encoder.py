@@ -187,6 +187,17 @@ class VisualGrammarEncoder:
             lines.append(" ".join(decoded_parts))
         return "\n".join(lines)
 
+
+    def encode_text_lines(self, text: str) -> List[str]:
+        """返回适合界面显示的逐 token 编码行。"""
+        lines: List[str] = []
+        for item in self.encode_text(text):
+            if item.letters and item.letters[0].code == "":
+                lines.append(f"{item.token}/{item.pos}: {item.token}")
+            else:
+                lines.append(f"{item.token}/{item.pos}: {item.compact}")
+        return lines
+
     def save_encoded_text_to_word(self, text: str, output_docx: str = "encoded_text_output.docx") -> str:
         """将整段文本编码结果保存到 Word。"""
         encoded = self.encode_text(text)
