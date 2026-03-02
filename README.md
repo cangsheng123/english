@@ -111,18 +111,24 @@ enc = VisualGrammarEncoder()
 text = "The old city park is open. John's book cover is red."
 result = enc.get_noun_phrases(text)
 
-# 1) 两个或以上单词构成的名词语块
+# 1) 两个或以上单词构成的名词语块（以及对应词性模式）
 for chunk in result["multiword_chunks"]:
-    print(chunk["text"], chunk["pattern"], chunk["tags"])
+    print(chunk["text"], chunk["pos_pattern"])
 
-# 2) 不构成名词语块的单个名词（输出前后词性）
+# 2) 不构成名词语块的单个名词（输出前后词性搭配）
 for item in result["single_nouns_with_context"]:
     print(item["token"], item["context_pattern"])
+
+# 3) 直接取模式列表
+print(result["multiword_pos_patterns"])
+print(result["single_noun_context_patterns"])
 ```
 
 返回结构包含：
-- `multiword_chunks`：匹配到的 2+ 词名词语块（含原文、tag 序列、命中的模式）。
+- `multiword_chunks`：匹配到的 2+ 词名词语块（含原文、tag 序列、命中的模式、`pos_pattern`）。
 - `single_nouns_with_context`：未被 2+ 语块覆盖的单个名词，附 `前词性_名词词性_后词性`。
+- `multiword_pos_patterns`：2+ 词名词块模式列表（如 `DT_JJ_NN`）。
+- `single_noun_context_patterns`：单个名词与前后词性的搭配列表（如 `DT_NN_VBZ`）。
 
 ## GitHub PR 显示 "This branch has conflicts" 怎么办
 

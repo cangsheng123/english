@@ -154,7 +154,7 @@ class VisualGrammarEncoder:
         return results
 
     def get_noun_phrases(self, text: str) -> Dict[str, List[Dict[str, object]]]:
-        """Get noun phrases and single-noun POS contexts from text."""
+        """Get noun phrases, chunk POS patterns and single-noun context combinations."""
         if sent_tokenize is None or word_tokenize is None or pos_tag is None:
             raise RuntimeError("NLTK is unavailable: install nltk before noun phrase extraction.")
 
@@ -164,6 +164,7 @@ class VisualGrammarEncoder:
         for sent_index, sentence in enumerate(sent_tokenize(text)):
             tagged = self._tag_tokens(word_tokenize(sentence))
             occupied = [False] * len(tagged)
+            noun_indexes = [idx for idx, (_, pos) in enumerate(tagged) if pos in self._noun_tag_set]
 
             i = 0
             while i < len(tagged):
@@ -174,9 +175,13 @@ class VisualGrammarEncoder:
 
                 pattern, span = match
                 end = i + span
-                if span >= 2:
+
+                # 必须包含名词，且仅统计 2 词及以上名词块
+                has_noun = any(j in noun_indexes for j in range(i, end))
+                if span >= 2 and has_noun:
                     for j in range(i, end):
                         occupied[j] = True
+                    tags = [pos for _, pos in tagged[i:end]]
                     multiword_chunks.append(
                         {
                             "sentence_index": sent_index,
@@ -184,16 +189,18 @@ class VisualGrammarEncoder:
                             "end": end - 1,
                             "text": " ".join(tok for tok, _ in tagged[i:end]),
                             "tokens": [tok for tok, _ in tagged[i:end]],
-                            "tags": [pos for _, pos in tagged[i:end]],
+                            "tags": tags,
                             "pattern": pattern,
+                            "pos_pattern": "_".join(tags),
                         }
                     )
                     i = end
                 else:
                     i += 1
 
-            for idx, (tok, pos) in enumerate(tagged):
-                if pos not in self._noun_tag_set or occupied[idx]:
+            for idx in noun_indexes:
+                tok, pos = tagged[idx]
+                if occupied[idx]:
                     continue
                 prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
                 next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
@@ -212,6 +219,8 @@ class VisualGrammarEncoder:
         return {
             "multiword_chunks": multiword_chunks,
             "single_nouns_with_context": single_nouns_with_context,
+            "multiword_pos_patterns": [chunk["pos_pattern"] for chunk in multiword_chunks],
+            "single_noun_context_patterns": [item["context_pattern"] for item in single_nouns_with_context],
         }
 
     def extract_noun_phrase_chunks(self, text: str) -> Dict[str, List[Dict[str, object]]]:
