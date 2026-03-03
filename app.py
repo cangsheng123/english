@@ -135,7 +135,7 @@ class EncoderApp:
             lines.append("(none)")
 
         lines.append("")
-        lines.append("【第二部分：单个名词 + 前后词性搭配组合】")
+        lines.append("【第二部分：单个名词 + 前后非名词词性搭配组合】")
         if labeled["labeled_single"]:
             for i, item in enumerate(labeled["labeled_single"], 1):
                 lines.append(
