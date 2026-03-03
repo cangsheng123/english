@@ -37,7 +37,7 @@ class EncoderApp:
             "1）在下方输入英文句子/段落。\n"
             "2）点击【名词块分析】查看：\n"
             "   - 两个及以上单词组成的名词块模式\n"
-            "   - 单个名词 + 前后词性搭配（且不属于多词名词块）\n"
+            "   - 名词块中的名词 + 去除名词后的剩余词性组合统计\n"
             "3）点击【导出名词分析Excel】保存到表格。\n"
             "4）如需语法编码，点击【语法编码】或【导出编码Word】。"
         )
@@ -178,11 +178,11 @@ class EncoderApp:
             lines.append("(none)")
 
         lines.append("")
-        lines.append("【第二部分：单个名词 + 前后非名词词性搭配组合】")
+        lines.append("【第二部分：名词块中的名词及剩余词性统计】")
         if labeled["labeled_single"]:
             for i, item in enumerate(labeled["labeled_single"], 1):
                 lines.append(
-                    f"{i}. {item['句子序号']} | 名词：{item['单个名词']} | 搭配：{item['前后词性搭配模式']}"
+                    f"{i}. 名词：{item['名词']}({item['名词词性']}) | 去名词剩余词性：{item['去除名词后剩余词性组合']} | 频次：{item['频次']}"
                 )
         else:
             lines.append("(none)")
@@ -191,7 +191,7 @@ class EncoderApp:
         self.noun_output.insert(tk.END, "\n".join(lines))
         self.output_notebook.select(1)
         self.status_var.set(
-            f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，单名词搭配 {len(labeled['labeled_single'])} 条。"
+            f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，名词块内名词统计 {len(labeled['labeled_single'])} 条。"
         )
 
     def on_export_noun_excel(self) -> None:

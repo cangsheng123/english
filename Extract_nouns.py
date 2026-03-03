@@ -243,7 +243,7 @@ class VisualGrammarEncoder:
                 if occupied[idx]:
                     continue
 
-                # 第二类：未构成 2+ 词名词块的单个名词，记录其相邻前后词性。
+                # 第二类（旧逻辑保留在原始结果中）：未构成 2+ 词名词块的单个名词。
                 prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
                 next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
 
@@ -259,16 +259,44 @@ class VisualGrammarEncoder:
                     }
                 )
 
-        multiword_pos_patterns = [chunk["pos_pattern"] for chunk in multiword_chunks]
-        single_noun_context_patterns = [item["context_pattern"] for item in single_nouns_with_context]
+        chunk_noun_rows: List[Dict[str, object]] = []
+        for chunk in multiword_chunks:
+            tags = chunk["tags"]
+            tokens = chunk["tokens"]
+            for idx, tag in enumerate(tags):
+                if tag not in self._noun_tag_set:
+                    continue
+                remaining_tags = [t for j, t in enumerate(tags) if j != idx]
+                chunk_noun_rows.append(
+                    {
+                        "sentence_index": chunk["sentence_index"],
+                        "chunk_text": chunk["text"],
+                        "chunk_pos_pattern": chunk["pos_pattern"],
+                        "noun": tokens[idx],
+                        "noun_tag": tag,
+                        "remaining_pos_pattern": "_".join(remaining_tags) if remaining_tags else "<NONE>",
+                    }
+                )
+
+        chunk_noun_stats = Counter(
+            (row["noun"], row["noun_tag"], row["remaining_pos_pattern"]) for row in chunk_noun_rows
+        )
 
         return {
             "multiword_chunks": multiword_chunks,
             "single_nouns_with_context": single_nouns_with_context,
-            "multiword_pos_patterns": multiword_pos_patterns,
-            "single_noun_context_patterns": single_noun_context_patterns,
-            "multiword_pattern_counts": dict(Counter(multiword_pos_patterns)),
-            "single_context_pattern_counts": dict(Counter(single_noun_context_patterns)),
+            "multiword_pos_patterns": [chunk["pos_pattern"] for chunk in multiword_chunks],
+            "single_noun_context_patterns": [item["context_pattern"] for item in single_nouns_with_context],
+            "chunk_noun_rows": chunk_noun_rows,
+            "chunk_noun_stats": [
+                {
+                    "noun": noun,
+                    "noun_tag": noun_tag,
+                    "remaining_pos_pattern": remaining,
+                    "count": count,
+                }
+                for (noun, noun_tag, remaining), count in chunk_noun_stats.most_common()
+            ],
         }
 
     def extract_noun_phrase_chunks(self, text: str) -> Dict[str, List[Dict[str, object]]]:
@@ -291,13 +319,14 @@ class VisualGrammarEncoder:
             )
 
         labeled_single: List[Dict[str, str]] = []
-        for single in raw_result["single_nouns_with_context"]:
+        for item in raw_result["chunk_noun_stats"]:
             labeled_single.append(
                 {
-                    "标注类型": "单个名词+前后非名词词性搭配组合",
-                    "句子序号": f"S{single['sentence_index'] + 1}",
-                    "单个名词": str(single["token"]),
-                    "前后词性搭配模式": str(single["context_pattern"]),
+                    "标注类型": "名词块中的名词及剩余词性统计",
+                    "名词": str(item["noun"]),
+                    "名词词性": str(item["noun_tag"]),
+                    "去除名词后剩余词性组合": str(item["remaining_pos_pattern"]),
+                    "频次": str(item["count"]),
                 }
             )
 
@@ -311,7 +340,7 @@ class VisualGrammarEncoder:
         text: str,
         output_excel: str = "名词块分析结果.xlsx",
         multi_label: str = "2词及以上名词块模式",
-        single_label: str = "单个名词+前后非名词词性搭配组合",
+        single_label: str = "名词块中的名词及剩余词性统计",
     ) -> str:
         """导出名词块分析到 Excel（两个工作表）。"""
         try:
@@ -346,7 +375,7 @@ class VisualGrammarEncoder:
         ws_multi.column_dimensions["C"].width = 26
 
         ws_single = wb.create_sheet(title=single_label[:31] or "Single")
-        headers_single = ["句子序号", "单个名词", "前后词性搭配模式"]
+        headers_single = ["名词", "名词词性", "去除名词后剩余词性组合", "频次"]
         for col, header in enumerate(headers_single, 1):
             cell = ws_single.cell(row=1, column=col, value=header)
             cell.font = Font(bold=True, color="FFFFFF")
@@ -354,16 +383,18 @@ class VisualGrammarEncoder:
             cell.alignment = Alignment(horizontal="center")
 
         for row, item in enumerate(labeled["labeled_single"], 2):
-            ws_single.cell(row=row, column=1, value=item["句子序号"])
-            ws_single.cell(row=row, column=2, value=item["单个名词"])
-            ws_single.cell(row=row, column=3, value=item["前后词性搭配模式"])
+            ws_single.cell(row=row, column=1, value=item["名词"])
+            ws_single.cell(row=row, column=2, value=item["名词词性"])
+            ws_single.cell(row=row, column=3, value=item["去除名词后剩余词性组合"])
+            ws_single.cell(row=row, column=4, value=item["频次"])
 
         if not labeled["labeled_single"]:
             ws_single.cell(row=2, column=1, value="(none)")
 
-        ws_single.column_dimensions["A"].width = 12
-        ws_single.column_dimensions["B"].width = 18
-        ws_single.column_dimensions["C"].width = 32
+        ws_single.column_dimensions["A"].width = 16
+        ws_single.column_dimensions["B"].width = 12
+        ws_single.column_dimensions["C"].width = 36
+        ws_single.column_dimensions["D"].width = 10
 
         output_path = Path(output_excel)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -382,11 +413,11 @@ class VisualGrammarEncoder:
         else:
             lines.append("(none)")
 
-        lines.append("[单个名词前后词性搭配]")
-        if result["single_nouns_with_context"]:
-            for item in result["single_nouns_with_context"]:
+        lines.append("[名词块中的名词及剩余词性统计]")
+        if result["chunk_noun_stats"]:
+            for item in result["chunk_noun_stats"]:
                 lines.append(
-                    f"S{item['sentence_index']} {item['token']} -> {item['context_pattern']}"
+                    f"{item['noun']}/{item['noun_tag']} -> {item['remaining_pos_pattern']} | count={item['count']}"
                 )
         else:
             lines.append("(none)")
