@@ -50,8 +50,15 @@ class EncoderApp:
             font=("Microsoft YaHei", 11, "bold"),
         ).pack(anchor=tk.W)
 
-        self.input_text = tk.Text(outer, height=10, wrap=tk.WORD)
-        self.input_text.pack(fill=tk.X, pady=(6, 8))
+        input_frame = ttk.Frame(outer)
+        input_frame.pack(fill=tk.X, pady=(6, 8))
+
+        self.input_text = tk.Text(input_frame, height=10, wrap=tk.WORD)
+        input_scrollbar = ttk.Scrollbar(input_frame, orient=tk.VERTICAL, command=self.input_text.yview)
+        self.input_text.configure(yscrollcommand=input_scrollbar.set)
+
+        self.input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        input_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         btn_row = ttk.Frame(outer)
         btn_row.pack(fill=tk.X, pady=(0, 8))
