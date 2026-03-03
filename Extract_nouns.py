@@ -21,6 +21,7 @@ import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 from zipfile import ZipFile, ZIP_DEFLATED
+from text_preprocess import normalize_single_quote_spacing, split_start_symbol_and_word
 
 try:
     import nltk
@@ -134,6 +135,11 @@ class VisualGrammarEncoder:
         # 按模式长度降序排序，确保长模式优先匹配
         self._compiled_noun_phrase_patterns.sort(key=lambda item: len(item[1]), reverse=True)
 
+    def _prepare_sentence_for_tokenize(self, sentence: str) -> str:
+        """分词前句子预处理：句首符号拆分 + 单引号空格化。"""
+        sentence = split_start_symbol_and_word(sentence)
+        sentence = normalize_single_quote_spacing(sentence)
+        return sentence
 
     # -----------------------------
     # 公共方法
@@ -142,7 +148,8 @@ class VisualGrammarEncoder:
     def encode_sentence(self, sentence: str) -> List[TokenEncoding]:
         if word_tokenize is None or pos_tag is None:
             raise RuntimeError("NLTK 不可用：请先安装 nltk 后再进行编码。")
-        tokens = word_tokenize(sentence)
+        prepared_sentence = self._prepare_sentence_for_tokenize(sentence)
+        tokens = word_tokenize(prepared_sentence)
         tagged = self._tag_tokens(tokens)
 
         # 先计算“后3位”的句法辅助上下文
@@ -173,7 +180,8 @@ class VisualGrammarEncoder:
         single_nouns_with_context: List[Dict[str, object]] = []
 
         for sent_index, sentence in enumerate(sent_tokenize(text)):
-            tagged = self._tag_tokens(word_tokenize(sentence))
+            prepared_sentence = self._prepare_sentence_for_tokenize(sentence)
+            tagged = self._tag_tokens(word_tokenize(prepared_sentence))
             occupied = [False] * len(tagged)
             noun_indexes = [idx for idx, (_, pos) in enumerate(tagged) if pos in self._noun_tag_set]
 
