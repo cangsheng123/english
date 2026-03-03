@@ -135,7 +135,7 @@ class EncoderApp:
             lines.append("(none)")
 
         lines.append("")
-        lines.append("【第二部分：单个名词 + 前后词性搭配组合】")
+        lines.append("【第二部分：单个名词 + 前后非名词词性搭配组合】")
         if labeled["labeled_single"]:
             for i, item in enumerate(labeled["labeled_single"], 1):
                 lines.append(
@@ -200,63 +200,6 @@ class EncoderApp:
 
         messagebox.showinfo("导出成功", f"文件已保存：\n{saved}")
         self.status_var.set(f"编码 Word 导出成功：{saved}")
-
-    def on_noun_analyze(self) -> None:
-        text = self._get_input()
-        if not text:
-            messagebox.showwarning("提示", "请先输入英文句子或段落。")
-            return
-
-        try:
-            labeled = self.encoder.get_labeled_noun_results(text)
-        except Exception as exc:
-            messagebox.showerror("名词块分析失败", str(exc))
-            return
-
-        lines: list[str] = ["【2词及以上名词块模式】"]
-        if labeled["labeled_multiword"]:
-            for i, item in enumerate(labeled["labeled_multiword"], 1):
-                lines.append(
-                    f"{i}. {item['句子序号']} | {item['名词块文本']} | {item['词性组合模式']}"
-                )
-        else:
-            lines.append("(none)")
-
-        lines.append("")
-        lines.append("【单个名词+前后词性搭配组合】")
-        if labeled["labeled_single"]:
-            for i, item in enumerate(labeled["labeled_single"], 1):
-                lines.append(
-                    f"{i}. {item['句子序号']} | {item['单个名词']} | {item['前后词性搭配模式']}"
-                )
-        else:
-            lines.append("(none)")
-
-        self.output_text.delete("1.0", tk.END)
-        self.output_text.insert(tk.END, "\n".join(lines))
-
-    def on_export_noun_excel(self) -> None:
-        text = self._get_input()
-        if not text:
-            messagebox.showwarning("提示", "请先输入英文句子或段落。")
-            return
-
-        path = filedialog.asksaveasfilename(
-            title="保存名词块分析",
-            defaultextension=".xlsx",
-            filetypes=[("Excel 文件", "*.xlsx")],
-            initialfile="名词块分析结果.xlsx",
-        )
-        if not path:
-            return
-
-        try:
-            saved = self.encoder.export_noun_results_to_excel(text, output_excel=path)
-        except Exception as exc:
-            messagebox.showerror("导出失败", str(exc))
-            return
-
-        messagebox.showinfo("导出成功", f"文件已保存:\n{saved}")
 
     def on_clear(self) -> None:
         self.input_text.delete("1.0", tk.END)

@@ -202,8 +202,15 @@ class VisualGrammarEncoder:
                 tok, pos = tagged[idx]
                 if occupied[idx]:
                     continue
+
                 prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
                 next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
+
+                # 第二类结果仅保留“独立名词 + 相邻非名词词性”的组合。
+                # 若前后相邻仍是名词，则更可能属于连续名词结构，不纳入该类别。
+                if prev_pos in self._noun_tag_set or next_pos in self._noun_tag_set:
+                    continue
+
                 single_nouns_with_context.append(
                     {
                         "sentence_index": sent_index,
