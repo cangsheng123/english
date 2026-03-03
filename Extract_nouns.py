@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Sequence, Tuple
+from collections import Counter
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -119,6 +120,13 @@ class VisualGrammarEncoder:
             "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN", "JJ_CC_JJ_NN", "JJ_,_JJ_CC_JJ_NN",
         ]
         self._noun_tag_set = {"NN", "NNP", "NNS", "NNPS"}
+        # 通用名词短语前置修饰成分（用于规则兜底提取）
+        self._noun_modifier_tag_set = {
+            "DT", "PDT", "WDT", "PRP$", "WP$", "CD",
+            "JJ", "JJR", "JJS", "RB", "RBR", "RBS",
+            "NN", "NNP", "NNS", "NNPS", "POS", "VBN", "VBG",
+            "CC", ",",
+        }
         self._compiled_noun_phrase_patterns = [
             (spec, self._compile_noun_pattern(spec)) for spec in self.noun_phrase_pattern_specs
         ]
@@ -198,6 +206,38 @@ class VisualGrammarEncoder:
                 else:
                     i += 1
 
+            # 规则兜底：按“修饰语 + 结尾名词”动态补抓 2 词及以上名词块
+            # （仅在未被固定模式占用的位置上工作）
+            for idx in noun_indexes:
+                if occupied[idx]:
+                    continue
+
+                start = idx
+                for j in range(idx - 1, -1, -1):
+                    if tagged[j][1] in self._noun_modifier_tag_set and not occupied[j]:
+                        start = j
+                    else:
+                        break
+
+                if start < idx:
+                    span_indices = range(start, idx + 1)
+                    if not any(occupied[j] for j in span_indices):
+                        tags = [pos for _, pos in tagged[start:idx + 1]]
+                        multiword_chunks.append(
+                            {
+                                "sentence_index": sent_index,
+                                "start": start,
+                                "end": idx,
+                                "text": " ".join(tok for tok, _ in tagged[start:idx + 1]),
+                                "tokens": [tok for tok, _ in tagged[start:idx + 1]],
+                                "tags": tags,
+                                "pattern": "FALLBACK_MODIFIER_NOUN",
+                                "pos_pattern": "_".join(tags),
+                            }
+                        )
+                        for j in span_indices:
+                            occupied[j] = True
+
             for idx in noun_indexes:
                 tok, pos = tagged[idx]
                 if occupied[idx]:
@@ -229,11 +269,16 @@ class VisualGrammarEncoder:
                     }
                 )
 
+        multiword_pos_patterns = [chunk["pos_pattern"] for chunk in multiword_chunks]
+        single_noun_context_patterns = [item["context_pattern"] for item in single_nouns_with_context]
+
         return {
             "multiword_chunks": multiword_chunks,
             "single_nouns_with_context": single_nouns_with_context,
-            "multiword_pos_patterns": [chunk["pos_pattern"] for chunk in multiword_chunks],
-            "single_noun_context_patterns": [item["context_pattern"] for item in single_nouns_with_context],
+            "multiword_pos_patterns": multiword_pos_patterns,
+            "single_noun_context_patterns": single_noun_context_patterns,
+            "multiword_pattern_counts": dict(Counter(multiword_pos_patterns)),
+            "single_context_pattern_counts": dict(Counter(single_noun_context_patterns)),
         }
 
     def extract_noun_phrase_chunks(self, text: str) -> Dict[str, List[Dict[str, object]]]:
@@ -353,6 +398,24 @@ class VisualGrammarEncoder:
                 lines.append(
                     f"S{item['sentence_index']} {item['token']} -> {item['context_pattern']}"
                 )
+        else:
+            lines.append("(none)")
+
+        lines.append("[多词名词块模式频次Top10]")
+        if result["multiword_pattern_counts"]:
+            for pattern, count in sorted(
+                result["multiword_pattern_counts"].items(), key=lambda kv: kv[1], reverse=True
+            )[:10]:
+                lines.append(f"{pattern} -> {count}")
+        else:
+            lines.append("(none)")
+
+        lines.append("[单名词上下文模式频次Top10]")
+        if result["single_context_pattern_counts"]:
+            for pattern, count in sorted(
+                result["single_context_pattern_counts"].items(), key=lambda kv: kv[1], reverse=True
+            )[:10]:
+                lines.append(f"{pattern} -> {count}")
         else:
             lines.append("(none)")
 
