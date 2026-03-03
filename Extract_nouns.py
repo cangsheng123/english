@@ -22,6 +22,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 from zipfile import ZipFile, ZIP_DEFLATED
 from text_preprocess import normalize_single_quote_spacing, split_start_symbol_and_word
+from adjective_validator import AdjectiveValidator
 
 try:
     import nltk
@@ -134,6 +135,13 @@ class VisualGrammarEncoder:
         ]
         # 按模式长度降序排序，确保长模式优先匹配
         self._compiled_noun_phrase_patterns.sort(key=lambda item: len(item[1]), reverse=True)
+        self._adj_validator = AdjectiveValidator()
+
+    def _prepare_sentence_for_tokenize(self, sentence: str) -> str:
+        """分词前句子预处理：句首符号拆分 + 单引号空格化。"""
+        sentence = split_start_symbol_and_word(sentence)
+        sentence = normalize_single_quote_spacing(sentence)
+        return sentence
 
     def _prepare_sentence_for_tokenize(self, sentence: str) -> str:
         """分词前句子预处理：句首符号拆分 + 单引号空格化。"""
@@ -607,7 +615,7 @@ class VisualGrammarEncoder:
             if i == 0 and i + 1 < len(fixed) and fixed[i + 1][0] == "," and pos in {"NN", "NNS"}:
                 fixed[i] = (tok, "NNP")
 
-        return fixed
+        return self._adj_validator.validate_and_correct(fixed)
 
     def _compile_noun_pattern(self, pattern: str) -> List[set[str]]:
         compiled: List[set[str]] = []
