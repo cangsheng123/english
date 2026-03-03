@@ -116,7 +116,7 @@ class VisualGrammarEncoder:
             "DT_RB_JJ_[NN]_NN", "JJ_NNS", "CD_NNS", "DT_RB_JJ_NN_[NN]", "DT_RB_JJ_[NN]_NN",
             "DT_NNP_POS_[NN]", "NNP_NNP_POS_[NN]", "NNP_POS_[NN]_NNS", "DT_NNP_POS_[NN]_NN",
             "NNP_POS_[NN]_NN", "JJ_NNP_POS_[NN]", "DT_JJ_NNP_NNP_POS_[NN]", "PRP$_JJ_[NN]_NNP",
-            "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN",
+            "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN", "JJ_CC_JJ_NN", "JJ_,_JJ_CC_JJ_NN",
         ]
         self._noun_tag_set = {"NN", "NNP", "NNS", "NNPS"}
         self._compiled_noun_phrase_patterns = [
@@ -202,8 +202,21 @@ class VisualGrammarEncoder:
                 tok, pos = tagged[idx]
                 if occupied[idx]:
                     continue
-                prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
-                next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
+
+                # 第二类：以“未构成多词名词块的单个名词”为中心，
+                # 记录其前后最近的非名词词性搭配。
+                prev_pos = "<BOS>"
+                for j in range(idx - 1, -1, -1):
+                    if tagged[j][1] not in self._noun_tag_set:
+                        prev_pos = tagged[j][1]
+                        break
+
+                next_pos = "<EOS>"
+                for j in range(idx + 1, len(tagged)):
+                    if tagged[j][1] not in self._noun_tag_set:
+                        next_pos = tagged[j][1]
+                        break
+
                 single_nouns_with_context.append(
                     {
                         "sentence_index": sent_index,
@@ -246,7 +259,7 @@ class VisualGrammarEncoder:
         for single in raw_result["single_nouns_with_context"]:
             labeled_single.append(
                 {
-                    "标注类型": "单个名词+前后词性搭配组合",
+                    "标注类型": "单个名词+前后非名词词性搭配组合",
                     "句子序号": f"S{single['sentence_index'] + 1}",
                     "单个名词": str(single["token"]),
                     "前后词性搭配模式": str(single["context_pattern"]),
@@ -263,7 +276,7 @@ class VisualGrammarEncoder:
         text: str,
         output_excel: str = "名词块分析结果.xlsx",
         multi_label: str = "2词及以上名词块模式",
-        single_label: str = "单个名词+前后词性搭配组合",
+        single_label: str = "单个名词+前后非名词词性搭配组合",
     ) -> str:
         """导出名词块分析到 Excel（两个工作表）。"""
         try:
