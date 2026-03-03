@@ -181,9 +181,14 @@ class EncoderApp:
         lines.append("【第二部分：名词块中的名词及剩余词性统计】")
         if labeled["labeled_single"]:
             for i, item in enumerate(labeled["labeled_single"], 1):
-                lines.append(
-                    f"{i}. 名词：{item['名词']}({item['名词词性']}) | 去名词剩余词性：{item['去除名词后剩余词性组合']} | 频次：{item['频次']}"
-                )
+                if "单个名词" in item and "前后词性搭配模式" in item:
+                    lines.append(
+                        f"{i}. {item.get('句子序号', '')} | 名词：{item['单个名词']} | 搭配：{item['前后词性搭配模式']}"
+                    )
+                else:
+                    lines.append(
+                        f"{i}. 名词：{item.get('名词', '')}({item.get('名词词性', '')}) | 去名词剩余词性：{item.get('去除名词后剩余词性组合', '')} | 频次：{item.get('频次', '')}"
+                    )
         else:
             lines.append("(none)")
 
