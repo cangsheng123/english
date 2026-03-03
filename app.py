@@ -14,10 +14,12 @@ class EncoderApp:
         self.root.title("英文句子语法编码与名词块分析工具")
         self.root.geometry("1080x760")
 
-        self.encoder = VisualGrammarEncoder()
+        self.encoder: VisualGrammarEncoder | None = None
+        self.encoder_init_error: str | None = None
         self.status_var = tk.StringVar(value="就绪：请输入英文句子或段落。")
 
         self._build_ui()
+        self._init_encoder()
 
     def _build_ui(self) -> None:
         outer = ttk.Frame(self.root, padding=12)
@@ -92,6 +94,32 @@ class EncoderApp:
         )
         status.pack(fill=tk.X, pady=(8, 0))
 
+
+    def _init_encoder(self) -> None:
+        try:
+            self.encoder = VisualGrammarEncoder()
+            self.encoder_init_error = None
+            self.status_var.set("就绪：请输入英文句子或段落。")
+        except Exception as exc:
+            self.encoder = None
+            self.encoder_init_error = str(exc)
+            self.status_var.set("初始化告警：界面可用，但分析功能暂不可用。")
+
+    def _require_encoder(self) -> VisualGrammarEncoder | None:
+        if self.encoder is not None:
+            return self.encoder
+
+        self._init_encoder()
+        if self.encoder is not None:
+            return self.encoder
+
+        messagebox.showerror(
+            "初始化失败",
+            f"分析器初始化失败：\n{self.encoder_init_error or '未知错误'}\n\n请检查 NLTK 资源后重试。",
+        )
+        self.status_var.set("初始化失败：分析器不可用。")
+        return None
+
     def _get_input(self) -> str:
         return self.input_text.get("1.0", tk.END).strip()
 
@@ -108,8 +136,12 @@ class EncoderApp:
         if text is None:
             return
 
+        encoder = self._require_encoder()
+        if encoder is None:
+            return
+
         try:
-            lines = self.encoder.encode_text_lines(text)
+            lines = encoder.encode_text_lines(text)
         except Exception as exc:
             messagebox.showerror("语法编码失败", str(exc))
             self.status_var.set(f"语法编码失败：{exc}")
@@ -125,8 +157,12 @@ class EncoderApp:
         if text is None:
             return
 
+        encoder = self._require_encoder()
+        if encoder is None:
+            return
+
         try:
-            labeled = self.encoder.get_labeled_noun_results(text)
+            labeled = encoder.get_labeled_noun_results(text)
         except Exception as exc:
             messagebox.showerror("名词块分析失败", str(exc))
             self.status_var.set(f"名词块分析失败：{exc}")
@@ -173,8 +209,12 @@ class EncoderApp:
             self.status_var.set("已取消导出名词分析 Excel。")
             return
 
+        encoder = self._require_encoder()
+        if encoder is None:
+            return
+
         try:
-            saved = self.encoder.export_noun_results_to_excel(text, output_excel=path)
+            saved = encoder.export_noun_results_to_excel(text, output_excel=path)
         except Exception as exc:
             messagebox.showerror("导出失败", str(exc))
             self.status_var.set(f"导出名词分析 Excel 失败：{exc}")
@@ -198,8 +238,12 @@ class EncoderApp:
             self.status_var.set("已取消导出编码 Word。")
             return
 
+        encoder = self._require_encoder()
+        if encoder is None:
+            return
+
         try:
-            saved = self.encoder.save_encoded_text_to_word(text, path)
+            saved = encoder.save_encoded_text_to_word(text, path)
         except Exception as exc:
             messagebox.showerror("导出失败", str(exc))
             self.status_var.set(f"导出编码 Word 失败：{exc}")
