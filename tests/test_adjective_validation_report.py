@@ -15,3 +15,17 @@ def test_get_adjective_validation_report_contains_change_record(monkeypatch) -> 
     assert rows[0]["原词性"] == "JJ"
     assert rows[0]["验证后词性"] == "VB"
     assert rows[0]["动作"] == "修改"
+
+
+def test_get_noun_phrases_includes_adjective_validation_rows(monkeypatch) -> None:
+    monkeypatch.setattr(en, "nltk", None)
+    monkeypatch.setattr(en, "sent_tokenize", lambda text: [text])
+    monkeypatch.setattr(en, "word_tokenize", lambda s: s.split())
+    monkeypatch.setattr(en, "pos_tag", lambda toks: [("will", "MD"), ("better", "JJ"), ("go", "VB")])
+
+    encoder = en.VisualGrammarEncoder()
+    result = encoder.get_noun_phrases("will better go")
+
+    assert "adjective_validation_rows" in result
+    assert result["adjective_validation_rows"]
+    assert result["adjective_validation_rows"][0]["单词"] == "better"

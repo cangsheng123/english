@@ -201,6 +201,17 @@ class EncoderApp:
             lines.append("(none)")
 
         lines.append("")
+        lines.append("【第三部分：形容词JJ验证】")
+        adj_rows = raw.get("adjective_validation_rows", [])
+        if adj_rows:
+            for i, row in enumerate(adj_rows, 1):
+                lines.append(
+                    f"{i}. {row['句子序号']} | {row['单词']} | {row['原词性']} -> {row['验证后词性']} | {row['动作']}"
+                )
+        else:
+            lines.append("(none)")
+
+        lines.append("")
         lines.append("【最后：名词块词性模式频次统计】")
         pattern_counts = Counter(raw.get("multiword_pos_patterns", []))
         if pattern_counts:
@@ -213,7 +224,7 @@ class EncoderApp:
         self.noun_output.insert(tk.END, "\n".join(lines))
         self.output_notebook.select(1)
         self.status_var.set(
-            f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，第二部分 {len(labeled['labeled_single'])} 条，词性模式 {len(pattern_counts)} 类。"
+            f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，第二部分 {len(labeled['labeled_single'])} 条，形容词验证 {len(adj_rows)} 条，词性模式 {len(pattern_counts)} 类。"
         )
 
 

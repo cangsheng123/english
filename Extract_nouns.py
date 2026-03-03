@@ -310,6 +310,8 @@ class VisualGrammarEncoder:
                 }
                 for (noun, noun_tag, remaining), count in chunk_noun_stats.most_common()
             ],
+            # 将形容词验证结果并入名词提取块，便于一次性调用。
+            "adjective_validation_rows": self.get_adjective_validation_report(text),
         }
 
     def extract_noun_phrase_chunks(self, text: str) -> Dict[str, List[Dict[str, object]]]:
@@ -614,6 +616,30 @@ class VisualGrammarEncoder:
                 fixed[i] = (tok, "NNP")
 
         return self._adj_validator.validate_and_correct(fixed)
+
+    def get_adjective_validation_report(self, text: str) -> List[Dict[str, str]]:
+        """返回 JJ 验证明细（保留/修改）。"""
+        if sent_tokenize is None or word_tokenize is None or pos_tag is None:
+            raise RuntimeError("NLTK is unavailable: install nltk before adjective validation.")
+
+        rows: List[Dict[str, str]] = []
+        for sent_index, sentence in enumerate(sent_tokenize(text), 1):
+            prepared_sentence = self._prepare_sentence_for_tokenize(sentence)
+            raw = list(pos_tag(word_tokenize(prepared_sentence)))
+            basic = self._retag_with_basic_rules(raw)
+            _, traces = self._adj_validator.validate_with_trace(basic)
+            for trace in traces:
+                rows.append(
+                    {
+                        "句子序号": f"S{sent_index}",
+                        "单词": trace["token"],
+                        "原词性": trace["original"],
+                        "验证后词性": trace["final"],
+                        "动作": "保留" if trace["action"] == "keep" else "修改",
+                        "规则说明": trace["reason"],
+                    }
+                )
+        return rows
 
     def get_adjective_validation_report(self, text: str) -> List[Dict[str, str]]:
         """返回 JJ 验证明细（保留/修改）。"""
