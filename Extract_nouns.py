@@ -102,7 +102,7 @@ class VisualGrammarEncoder:
 
         # 名词语块规则（[NN] 表示 NN/NNP/NNS/NNPS）
         self.noun_phrase_pattern_specs: List[str] = [
-            "DT_JJ_NNP_NNP_POS_[NN]", "NNP_NNP_POS_[NN]", "PRP$_NN_POS_[NN]", "CD_NNS_POS_[NN]",
+            "DT_JJ_NNP_NNP_POS_[NN]","DT_JJ_,_JJ_[NN]", "NNP_NNP_POS_[NN]", "PRP$_NN_POS_[NN]", "CD_NNS_POS_[NN]",
             "DT_NNP_NNP_[NN]", "DT_NNP_POS_[NN]", "DT_NNS_POS_[NN]", "JJ_NNP_POS_[NN]",
             "NN_NNS_POS_[NN]", "NNP_NNP_POS_JJ_[NN]", "DT_JJ_NNP_[NN]", "DT_NN_POS_[NN]",
             "DT_RBS_JJ_[NN]", "DT_RBS_NN_[NN]", "DT_RBS_[NN]_NN", "JJ_NNP_NN_[NN]",
@@ -127,10 +127,13 @@ class VisualGrammarEncoder:
             "NN", "NNP", "NNS", "NNPS", "POS", "VBN", "VBG",
             "CC", ",",
         }
+        # 编译模式（修复核心：正确处理包含标点的模式）
         self._compiled_noun_phrase_patterns = [
             (spec, self._compile_noun_pattern(spec)) for spec in self.noun_phrase_pattern_specs
         ]
+        # 按模式长度降序排序，确保长模式优先匹配
         self._compiled_noun_phrase_patterns.sort(key=lambda item: len(item[1]), reverse=True)
+
 
     # -----------------------------
     # 公共方法
