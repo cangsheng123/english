@@ -243,19 +243,9 @@ class VisualGrammarEncoder:
                 if occupied[idx]:
                     continue
 
-                # 第二类：以“未构成多词名词块的单个名词”为中心，
-                # 记录其前后最近的非名词词性搭配。
-                prev_pos = "<BOS>"
-                for j in range(idx - 1, -1, -1):
-                    if tagged[j][1] not in self._noun_tag_set:
-                        prev_pos = tagged[j][1]
-                        break
-
-                next_pos = "<EOS>"
-                for j in range(idx + 1, len(tagged)):
-                    if tagged[j][1] not in self._noun_tag_set:
-                        next_pos = tagged[j][1]
-                        break
+                # 第二类：未构成 2+ 词名词块的单个名词，记录其相邻前后词性。
+                prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
+                next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
 
                 single_nouns_with_context.append(
                     {
