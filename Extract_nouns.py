@@ -102,7 +102,7 @@ class VisualGrammarEncoder:
 
         # 名词语块规则（[NN] 表示 NN/NNP/NNS/NNPS）
         self.noun_phrase_pattern_specs: List[str] = [
-            "DT_JJ_NNP_NNP_POS_[NN]", "NNP_NNP_POS_[NN]", "PRP$_NN_POS_[NN]", "CD_NNS_POS_[NN]",
+            "DT_JJ_NNP_NNP_POS_[NN]","DT_JJ_,_JJ_[NN]", "NNP_NNP_POS_[NN]", "PRP$_NN_POS_[NN]", "CD_NNS_POS_[NN]",
             "DT_NNP_NNP_[NN]", "DT_NNP_POS_[NN]", "DT_NNS_POS_[NN]", "JJ_NNP_POS_[NN]",
             "NN_NNS_POS_[NN]", "NNP_NNP_POS_JJ_[NN]", "DT_JJ_NNP_[NN]", "DT_NN_POS_[NN]",
             "DT_RBS_JJ_[NN]", "DT_RBS_NN_[NN]", "DT_RBS_[NN]_NN", "JJ_NNP_NN_[NN]",
@@ -120,10 +120,20 @@ class VisualGrammarEncoder:
             "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN", "JJ_CC_JJ_NN", "JJ_,_JJ_CC_JJ_NN",
         ]
         self._noun_tag_set = {"NN", "NNP", "NNS", "NNPS"}
+        # 通用名词短语前置修饰成分（用于规则兜底提取）
+        self._noun_modifier_tag_set = {
+            "DT", "PDT", "WDT", "PRP$", "WP$", "CD",
+            "JJ", "JJR", "JJS", "RB", "RBR", "RBS",
+            "NN", "NNP", "NNS", "NNPS", "POS", "VBN", "VBG",
+            "CC", ",",
+        }
+        # 编译模式（修复核心：正确处理包含标点的模式）
         self._compiled_noun_phrase_patterns = [
             (spec, self._compile_noun_pattern(spec)) for spec in self.noun_phrase_pattern_specs
         ]
+        # 按模式长度降序排序，确保长模式优先匹配
         self._compiled_noun_phrase_patterns.sort(key=lambda item: len(item[1]), reverse=True)
+
 
     # -----------------------------
     # 公共方法
@@ -198,6 +208,38 @@ class VisualGrammarEncoder:
                     i = end
                 else:
                     i += 1
+
+            # 规则兜底：按“修饰语 + 结尾名词”动态补抓 2 词及以上名词块
+            # （仅在未被固定模式占用的位置上工作）
+            for idx in noun_indexes:
+                if occupied[idx]:
+                    continue
+
+                start = idx
+                for j in range(idx - 1, -1, -1):
+                    if tagged[j][1] in self._noun_modifier_tag_set and not occupied[j]:
+                        start = j
+                    else:
+                        break
+
+                if start < idx:
+                    span_indices = range(start, idx + 1)
+                    if not any(occupied[j] for j in span_indices):
+                        tags = [pos for _, pos in tagged[start:idx + 1]]
+                        multiword_chunks.append(
+                            {
+                                "sentence_index": sent_index,
+                                "start": start,
+                                "end": idx,
+                                "text": " ".join(tok for tok, _ in tagged[start:idx + 1]),
+                                "tokens": [tok for tok, _ in tagged[start:idx + 1]],
+                                "tags": tags,
+                                "pattern": "FALLBACK_MODIFIER_NOUN",
+                                "pos_pattern": "_".join(tags),
+                            }
+                        )
+                        for j in span_indices:
+                            occupied[j] = True
 
             for idx in noun_indexes:
                 tok, pos = tagged[idx]
@@ -380,6 +422,24 @@ class VisualGrammarEncoder:
                 lines.append(
                     f"{item['noun']}/{item['noun_tag']} -> {item['remaining_pos_pattern']} | count={item['count']}"
                 )
+        else:
+            lines.append("(none)")
+
+        lines.append("[多词名词块模式频次Top10]")
+        if result["multiword_pattern_counts"]:
+            for pattern, count in sorted(
+                result["multiword_pattern_counts"].items(), key=lambda kv: kv[1], reverse=True
+            )[:10]:
+                lines.append(f"{pattern} -> {count}")
+        else:
+            lines.append("(none)")
+
+        lines.append("[单名词上下文模式频次Top10]")
+        if result["single_context_pattern_counts"]:
+            for pattern, count in sorted(
+                result["single_context_pattern_counts"].items(), key=lambda kv: kv[1], reverse=True
+            )[:10]:
+                lines.append(f"{pattern} -> {count}")
         else:
             lines.append("(none)")
 
