@@ -116,7 +116,7 @@ class VisualGrammarEncoder:
             "DT_RB_JJ_[NN]_NN", "JJ_NNS", "CD_NNS", "DT_RB_JJ_NN_[NN]", "DT_RB_JJ_[NN]_NN",
             "DT_NNP_POS_[NN]", "NNP_NNP_POS_[NN]", "NNP_POS_[NN]_NNS", "DT_NNP_POS_[NN]_NN",
             "NNP_POS_[NN]_NN", "JJ_NNP_POS_[NN]", "DT_JJ_NNP_NNP_POS_[NN]", "PRP$_JJ_[NN]_NNP",
-            "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN",
+            "PRP$_JJ_[NN]_NN", "DT_JJ_[NN]_NN", "JJ_CC_JJ_NN", "JJ_,_JJ_CC_JJ_NN",
         ]
         self._noun_tag_set = {"NN", "NNP", "NNS", "NNPS"}
         self._compiled_noun_phrase_patterns = [
@@ -202,8 +202,11 @@ class VisualGrammarEncoder:
                 tok, pos = tagged[idx]
                 if occupied[idx]:
                     continue
+
+                # 第二类：未构成 2+ 词名词块的单个名词，记录其相邻前后词性。
                 prev_pos = tagged[idx - 1][1] if idx - 1 >= 0 else "<BOS>"
                 next_pos = tagged[idx + 1][1] if idx + 1 < len(tagged) else "<EOS>"
+
                 single_nouns_with_context.append(
                     {
                         "sentence_index": sent_index,
