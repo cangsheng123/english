@@ -68,6 +68,7 @@ class EncoderApp:
 
         ttk.Button(btn_row, text="语法编码", command=self.on_encode).pack(side=tk.LEFT)
         ttk.Button(btn_row, text="名词块分析", command=self.on_noun_analyze).pack(side=tk.LEFT, padx=8)
+        ttk.Button(btn_row, text="形容词验证", command=self.on_adj_validate).pack(side=tk.LEFT)
         ttk.Button(btn_row, text="导出名词分析Excel", command=self.on_export_noun_excel).pack(side=tk.LEFT)
         ttk.Button(btn_row, text="导出编码Word", command=self.on_export_docx).pack(side=tk.LEFT, padx=8)
         ttk.Button(btn_row, text="清空", command=self.on_clear).pack(side=tk.LEFT)
@@ -77,14 +78,19 @@ class EncoderApp:
 
         frame_encoding = ttk.Frame(self.output_notebook)
         frame_noun = ttk.Frame(self.output_notebook)
+        frame_adj = ttk.Frame(self.output_notebook)
         self.output_notebook.add(frame_encoding, text="语法编码结果")
         self.output_notebook.add(frame_noun, text="名词分析结果")
+        self.output_notebook.add(frame_adj, text="形容词验证结果")
 
         self.encoding_output = tk.Text(frame_encoding, wrap=tk.WORD)
         self.encoding_output.pack(fill=tk.BOTH, expand=True)
 
         self.noun_output = tk.Text(frame_noun, wrap=tk.WORD)
         self.noun_output.pack(fill=tk.BOTH, expand=True)
+
+        self.adj_output = tk.Text(frame_adj, wrap=tk.WORD)
+        self.adj_output.pack(fill=tk.BOTH, expand=True)
 
         status = ttk.Label(
             outer,
@@ -210,6 +216,38 @@ class EncoderApp:
             f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，第二部分 {len(labeled['labeled_single'])} 条，词性模式 {len(pattern_counts)} 类。"
         )
 
+
+    def on_adj_validate(self) -> None:
+        text = self._require_input()
+        if text is None:
+            return
+
+        encoder = self._require_encoder()
+        if encoder is None:
+            return
+
+        try:
+            rows = encoder.get_adjective_validation_report(text)
+        except Exception as exc:
+            messagebox.showerror("形容词验证失败", str(exc))
+            self.status_var.set(f"形容词验证失败：{exc}")
+            return
+
+        lines: list[str] = ["【形容词JJ验证结果】"]
+        if rows:
+            for i, row in enumerate(rows, 1):
+                lines.append(
+                    f"{i}. {row['句子序号']} | {row['单词']} | {row['原词性']} -> {row['验证后词性']} | {row['动作']} | {row['规则说明']}"
+                )
+        else:
+            lines.append("(none)")
+
+        self.adj_output.delete("1.0", tk.END)
+        self.adj_output.insert(tk.END, "\n".join(lines))
+        self.output_notebook.select(2)
+        changed = sum(1 for r in rows if r.get("动作") == "修改")
+        self.status_var.set(f"形容词验证完成：共 {len(rows)} 条，修改 {changed} 条。")
+
     def on_export_noun_excel(self) -> None:
         text = self._require_input()
         if text is None:
@@ -272,6 +310,7 @@ class EncoderApp:
         self.input_text.delete("1.0", tk.END)
         self.encoding_output.delete("1.0", tk.END)
         self.noun_output.delete("1.0", tk.END)
+        self.adj_output.delete("1.0", tk.END)
         self.status_var.set("已清空输入和输出。")
 
 

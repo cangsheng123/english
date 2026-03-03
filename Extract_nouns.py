@@ -143,12 +143,6 @@ class VisualGrammarEncoder:
         sentence = normalize_single_quote_spacing(sentence)
         return sentence
 
-    def _prepare_sentence_for_tokenize(self, sentence: str) -> str:
-        """分词前句子预处理：句首符号拆分 + 单引号空格化。"""
-        sentence = split_start_symbol_and_word(sentence)
-        sentence = normalize_single_quote_spacing(sentence)
-        return sentence
-
     # -----------------------------
     # 公共方法
     # -----------------------------
@@ -583,6 +577,10 @@ class VisualGrammarEncoder:
         return self._retag_with_rules(tagged)
 
     def _retag_with_rules(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        basic = self._retag_with_basic_rules(tagged)
+        return self._adj_validator.validate_and_correct(basic)
+
+    def _retag_with_basic_rules(self, tagged: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
         """对 NLTK 结果做轻量后处理，缓解常见误标。"""
         force_tags = {
             "a": "DT", "an": "DT", "the": "DT",
@@ -616,6 +614,30 @@ class VisualGrammarEncoder:
                 fixed[i] = (tok, "NNP")
 
         return self._adj_validator.validate_and_correct(fixed)
+
+    def get_adjective_validation_report(self, text: str) -> List[Dict[str, str]]:
+        """返回 JJ 验证明细（保留/修改）。"""
+        if sent_tokenize is None or word_tokenize is None or pos_tag is None:
+            raise RuntimeError("NLTK is unavailable: install nltk before adjective validation.")
+
+        rows: List[Dict[str, str]] = []
+        for sent_index, sentence in enumerate(sent_tokenize(text), 1):
+            prepared_sentence = self._prepare_sentence_for_tokenize(sentence)
+            raw = list(pos_tag(word_tokenize(prepared_sentence)))
+            basic = self._retag_with_basic_rules(raw)
+            _, traces = self._adj_validator.validate_with_trace(basic)
+            for trace in traces:
+                rows.append(
+                    {
+                        "句子序号": f"S{sent_index}",
+                        "单词": trace["token"],
+                        "原词性": trace["original"],
+                        "验证后词性": trace["final"],
+                        "动作": "保留" if trace["action"] == "keep" else "修改",
+                        "规则说明": trace["reason"],
+                    }
+                )
+        return rows
 
     def _compile_noun_pattern(self, pattern: str) -> List[set[str]]:
         compiled: List[set[str]] = []
