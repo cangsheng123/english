@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from collections import Counter
 from tkinter import filedialog, messagebox, ttk
 
 from Extract_nouns import VisualGrammarEncoder
@@ -37,7 +38,7 @@ class EncoderApp:
             "1）在下方输入英文句子/段落。\n"
             "2）点击【名词块分析】查看：\n"
             "   - 两个及以上单词组成的名词块模式\n"
-            "   - 名词块中的名词 + 去除名词后的剩余词性组合统计\n"
+            "   - 名词块中的名词 + 去除名词后词性组合\n   - 最后附名词块词性模式频次统计\n"
             "3）点击【导出名词分析Excel】保存到表格。\n"
             "4）如需语法编码，点击【语法编码】或【导出编码Word】。"
         )
@@ -162,6 +163,7 @@ class EncoderApp:
             return
 
         try:
+            raw = encoder.get_noun_phrases(text)
             labeled = encoder.get_labeled_noun_results(text)
         except Exception as exc:
             messagebox.showerror("名词块分析失败", str(exc))
@@ -178,7 +180,7 @@ class EncoderApp:
             lines.append("(none)")
 
         lines.append("")
-        lines.append("【第二部分：名词块中的名词及剩余词性统计】")
+        lines.append("【第二部分：名词块中的名词及去名词后词性组合】")
         if labeled["labeled_single"]:
             for i, item in enumerate(labeled["labeled_single"], 1):
                 if "单个名词" in item and "前后词性搭配模式" in item:
@@ -187,8 +189,17 @@ class EncoderApp:
                     )
                 else:
                     lines.append(
-                        f"{i}. 名词：{item.get('名词', '')}({item.get('名词词性', '')}) | 去名词剩余词性：{item.get('去除名词后剩余词性组合', '')} | 频次：{item.get('频次', '')}"
+                        f"{i}. 名词：{item.get('名词', '')}({item.get('名词词性', '')}) | 去名词剩余词性：{item.get('去除名词后剩余词性组合', '')}"
                     )
+        else:
+            lines.append("(none)")
+
+        lines.append("")
+        lines.append("【最后：名词块词性模式频次统计】")
+        pattern_counts = Counter(raw.get("multiword_pos_patterns", []))
+        if pattern_counts:
+            for i, (pattern, count) in enumerate(pattern_counts.most_common(), 1):
+                lines.append(f"{i}. {pattern} -> {count}")
         else:
             lines.append("(none)")
 
@@ -196,7 +207,7 @@ class EncoderApp:
         self.noun_output.insert(tk.END, "\n".join(lines))
         self.output_notebook.select(1)
         self.status_var.set(
-            f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，名词块内名词统计 {len(labeled['labeled_single'])} 条。"
+            f"名词块分析完成：多词名词块 {len(labeled['labeled_multiword'])} 条，第二部分 {len(labeled['labeled_single'])} 条，词性模式 {len(pattern_counts)} 类。"
         )
 
     def on_export_noun_excel(self) -> None:
